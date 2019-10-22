@@ -20,20 +20,43 @@ public class ZKTAWindow {
             }
 
             ZKTerrainAnalyzer zkta = new ZKTerrainAnalyzer(img);
-            ArrayList<Contour> contours = zkta.traceContours();
+            ArrayList<Contour> contours = zkta.getContours();
+            ArrayList<Contour> simple = zkta.getSimplifiedContours();
 
             Graphics bg = img.getGraphics();
-            bg.setColor(Color.RED);
+
+            bg.setColor(Color.BLACK);
+            bg.fillRect ( 0, 0, img.getWidth(), img.getHeight() );
+
+            bg.setColor(Color.GREEN);
+            int fullSizePoints = 0;
 
             for(int c = 0; c < contours.size();c++){
                 Contour contour = contours.get(c);
                 for(int p = 0; p < contour.length();p++){
+                    fullSizePoints++;
                     int n = p + 1 < contour.length()? p+1 : 0;
                     Point cp = contour.getPoint(p);
                     Point np = contour.getPoint(n);
                     bg.drawLine(cp.x,cp.y,np.x,np.y);
                 }
             }
+
+            int simplifiedPoints = 0;
+
+            bg.setColor(Color.RED);
+            for(Contour contour: simple){
+                for(int p = 0; p < contour.length();p++){
+                    simplifiedPoints++;
+                    int n = p + 1 < contour.length()? p+1 : 0;
+                    Point cp = contour.getPoint(p);
+                    Point np = contour.getPoint(n);
+                    bg.drawLine(cp.x,cp.y,np.x,np.y);
+                }
+            }
+
+            System.out.println("Total contour points: "+fullSizePoints);
+            System.out.println("Simplified points: "+simplifiedPoints);
 
             JFrame frame = new JFrame();
             ImageIcon icon = new ImageIcon(img);

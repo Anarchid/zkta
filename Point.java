@@ -1,4 +1,4 @@
-public class Point {
+public class Point implements com.goebl.simplify.Point{
     public int x;
     public int y;
 
@@ -15,5 +15,15 @@ public class Point {
     @Override
     public String toString() {
         return "<"+this.x+","+this.y+">";
+    }
+
+    @Override
+    public double getX() {
+        return x;
+    }
+
+    @Override
+    public double getY() {
+        return y;
     }
 }

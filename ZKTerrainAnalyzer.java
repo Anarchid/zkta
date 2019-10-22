@@ -1,12 +1,15 @@
-import com.sun.deploy.trace.Trace;
+import com.goebl.simplify.Simplify;
 
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
+import java.util.Iterator;
 
 public class ZKTerrainAnalyzer {
     // given a bitmap (a walkability map in our context) it returns the external contour of obstacles
     BufferedImage bitMap;
+    ArrayList<Contour> fullContours;
+    ArrayList<Contour> simplifiedContours;
     int[][] labelMap;
 
     ZKTerrainAnalyzer(BufferedImage img){
@@ -14,9 +17,39 @@ public class ZKTerrainAnalyzer {
         int height = img.getHeight();
         bitMap = img;
         labelMap = new int[height][width];
+        fullContours = traceContours();
+        simplifiedContours = simplifyContours();
     }
 
-    public ArrayList<Contour> traceContours()
+    public ArrayList<Contour> getContours(){
+        return fullContours;
+    }
+
+    public ArrayList<Contour> getSimplifiedContours(){
+        return simplifiedContours;
+    }
+
+    private ArrayList<Contour> simplifyContours(){
+        long timeStarted = System.currentTimeMillis();
+        ArrayList<Contour> simple = new ArrayList<Contour>();
+        Iterator<Contour> i = fullContours.iterator();
+        while (i.hasNext()) {
+            simple.add(simplifyContour(i.next()));
+        }
+        System.out.println("Total time spent simplifying: "+(System.currentTimeMillis() - timeStarted) + "ms");
+        return simple;
+    }
+
+    private Contour simplifyContour(Contour c) {
+        Simplify<Point> simplify = new Simplify<Point>(new Point[0]);
+        Point[] allPoints = c.getPointsArray();
+        Point[] lessPoints = simplify.simplify(allPoints, 3, true);
+
+        return new Contour(lessPoints);
+
+    }
+
+    private ArrayList<Contour> traceContours()
     {
         long timeStarted = System.currentTimeMillis();
         int cy, cx, tracingDirection, connectedComponentsCount = 0, labelId = 0;
@@ -78,7 +111,6 @@ public class ZKTerrainAnalyzer {
         TracePoint p = tracer(cx, cy, tracingDirection);
 
         contourPoints.addPoint(p);
-        //System.out.println(" -- first point:  <"+p.x+","+p.y+">, dir:"+p.traceDirection+" value: "+new Color(bitMap.getRGB(p.x,p.y)).getRed());
 
 
         if (p.x != sx || p.y != sy) {
@@ -89,7 +121,6 @@ public class ZKTerrainAnalyzer {
                 labelMap[p.x][p.y] = labelId;
                 p = tracer(p.x, p.y, (p.traceDirection + 6) % 8);
 
-                //System.out.println(" -- next point:  <"+p.x+","+p.y+">, dir:"+p.traceDirection+" value: "+new Color(bitMap.getRGB(p.x,p.y)).getRed());
                 contourPoints.addPoint(p);
 
                 if (p.x == sx && p.y == sy) {
