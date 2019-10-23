@@ -4,12 +4,14 @@ import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.Iterator;
+import org.rogach.jopenvoronoi.*;
 
 public class ZKTerrainAnalyzer {
     // given a bitmap (a walkability map in our context) it returns the external contour of obstacles
     BufferedImage bitMap;
     ArrayList<Contour> fullContours;
     ArrayList<Contour> simplifiedContours;
+    VoronoiDiagram voronoid;
     int[][] labelMap;
 
     ZKTerrainAnalyzer(BufferedImage img){
@@ -19,6 +21,7 @@ public class ZKTerrainAnalyzer {
         labelMap = new int[height][width];
         fullContours = traceContours();
         simplifiedContours = simplifyContours();
+        voronoid = generateVoronoi(simplifiedContours);
     }
 
     public ArrayList<Contour> getContours(){
@@ -29,12 +32,52 @@ public class ZKTerrainAnalyzer {
         return simplifiedContours;
     }
 
+    private VoronoiDiagram generateVoronoi(ArrayList<Contour>obstacles){
+        long timeStarted = System.currentTimeMillis();
+
+        VoronoiDiagram vd = new VoronoiDiagram();
+        Iterator<Contour> i = obstacles.iterator();
+        Vertex[][] allVertices = new Vertex[obstacles.size()][];
+        int v = 0;
+        while (i.hasNext()) {
+            Point[] pts = i.next().getPointsArray();
+            Vertex[] vertices = new Vertex[pts.length-1];
+
+            // jopenvoronoi requires all points to be within a unit circle centered at zero
+            double width = (double)bitMap.getWidth();
+            double height = (double)bitMap.getHeight();
+            double radius = Math.sqrt(width*width + height*height)/2;
+
+            // cast and add all vertices; skip last vertex of each contour
+            for(int j=0;j < pts.length-1;j++){
+                double x = ((double)pts[j].x - width/2)/radius;
+                double y = -((double)pts[j].y - height/2)/radius;
+                vertices[j] = vd.insert_point_site(new org.rogach.jopenvoronoi.Point(x,y));
+            }
+            allVertices[v] = vertices;
+            v++;
+        }
+        // assign segments
+        for(int vi=0;vi < allVertices.length;vi++) {
+            for (int j = 0; j < allVertices[vi].length; j++) {
+                int k = j + 1 < allVertices[vi].length ? j + 1 : 0;
+                vd.insert_line_site(allVertices[vi][j], allVertices[vi][k]);
+            }
+        }
+        System.out.println("Time spent generating voronoi: "+(System.currentTimeMillis() - timeStarted) + "ms");
+
+        return vd;
+    }
+
     private ArrayList<Contour> simplifyContours(){
         long timeStarted = System.currentTimeMillis();
         ArrayList<Contour> simple = new ArrayList<Contour>();
         Iterator<Contour> i = fullContours.iterator();
         while (i.hasNext()) {
-            simple.add(simplifyContour(i.next()));
+            Contour simplifiedContour = simplifyContour(i.next());
+            if(simplifiedContour.length() > 2){
+                simple.add(simplifiedContour);
+            }
         }
         System.out.println("Total time spent simplifying: "+(System.currentTimeMillis() - timeStarted) + "ms");
         return simple;
@@ -43,7 +86,7 @@ public class ZKTerrainAnalyzer {
     private Contour simplifyContour(Contour c) {
         Simplify<Point> simplify = new Simplify<Point>(new Point[0]);
         Point[] allPoints = c.getPointsArray();
-        Point[] lessPoints = simplify.simplify(allPoints, 3, true);
+        Point[] lessPoints = simplify.simplify(allPoints, 10, true);
 
         return new Contour(lessPoints);
 

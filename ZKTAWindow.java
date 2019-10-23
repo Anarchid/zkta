@@ -45,7 +45,11 @@ public class ZKTAWindow {
             int simplifiedPoints = 0;
 
             bg.setColor(Color.RED);
-            for(Contour contour: simple){
+
+            for(int i = 0; i < simple.size();i++){
+                Contour contour = simple.get(i);
+                Point pp = contour.getPoint(0);
+                bg.drawString(""+i,pp.x+10,pp.y+10);
                 for(int p = 0; p < contour.length();p++){
                     simplifiedPoints++;
                     int n = p + 1 < contour.length()? p+1 : 0;

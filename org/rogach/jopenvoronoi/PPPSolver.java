@@ -39,6 +39,9 @@ public class PPPSolver extends Solver {
         double J4 = (pi.x-pk.x)*(pj.y-pk.y) - (pj.x-pk.x)*(pi.y-pk.y);
         assert( J4 != 0.0 ) : " J4 != 0.0 ";
         if (J4==0.0) {
+            System.out.println(pi);
+            System.out.println(pj);
+            System.out.println(pk);
             throw new RuntimeException(" PPPSolver: Warning divide-by-zero!!");
         }
         Point sln_pt = new Point( -J2/J4 + pk.x, J3/J4 + pk.y );
