@@ -24,6 +24,10 @@ public class ZKTerrainAnalyzer {
         voronoid = generateVoronoi(simplifiedContours);
     }
 
+    public VoronoiDiagram getVoronoid(){
+        return voronoid;
+    }
+
     public ArrayList<Contour> getContours(){
         return fullContours;
     }
@@ -51,7 +55,7 @@ public class ZKTerrainAnalyzer {
             // cast and add all vertices; skip last vertex of each contour
             for(int j=0;j < pts.length-1;j++){
                 double x = ((double)pts[j].x - width/2)/radius;
-                double y = -((double)pts[j].y - height/2)/radius;
+                double y = ((double)pts[j].y - height/2)/radius;
                 vertices[j] = vd.insert_point_site(new org.rogach.jopenvoronoi.Point(x,y));
             }
             allVertices[v] = vertices;

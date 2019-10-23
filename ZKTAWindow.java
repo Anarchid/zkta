@@ -1,3 +1,7 @@
+import org.rogach.jopenvoronoi.Edge;
+import org.rogach.jopenvoronoi.HalfEdgeDiagram;
+import org.rogach.jopenvoronoi.VoronoiDiagram;
+
 import javax.imageio.ImageIO;
 import javax.swing.JFrame;
 import javax.swing.ImageIcon;
@@ -44,8 +48,26 @@ public class ZKTAWindow {
 
             int simplifiedPoints = 0;
 
-            bg.setColor(Color.RED);
 
+            HalfEdgeDiagram g = zkta.getVoronoid().get_graph_reference();
+            // rescale points back to heightmap scale
+            double width = img.getWidth();
+            double height = img.getHeight();
+            double radius = Math.sqrt(width*width+height*height)/2;
+            int edges = 0;
+            bg.setColor(Color.BLUE);
+            for (Edge e : g.edges) {
+                if (e.valid) {
+                    edges++;
+                    int x1 = (int)Math.round(e.source.position.x*radius + width/2);
+                    int y1 = (int)Math.round(e.source.position.y*radius + height/2);
+                    int x2 = (int)Math.round(e.target.position.x*radius + width/2);
+                    int y2 = (int)Math.round(e.target.position.y*radius + height/2);
+                    bg.drawLine(x1,y1,x2,y2);
+                }
+            }
+
+            bg.setColor(Color.RED);
             for(int i = 0; i < simple.size();i++){
                 Contour contour = simple.get(i);
                 Point pp = contour.getPoint(0);
@@ -61,6 +83,7 @@ public class ZKTAWindow {
 
             System.out.println("Total contour points: "+fullSizePoints);
             System.out.println("Simplified points: "+simplifiedPoints);
+            System.out.println("Voronoi edges: "+edges);
 
             JFrame frame = new JFrame();
             ImageIcon icon = new ImageIcon(img);
