@@ -3,7 +3,10 @@ import com.goebl.simplify.Simplify;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Iterator;
+import java.util.List;
+
 import org.rogach.jopenvoronoi.*;
 
 public class ZKTerrainAnalyzer {
@@ -12,6 +15,8 @@ public class ZKTerrainAnalyzer {
     ArrayList<Contour> fullContours;
     ArrayList<Contour> simplifiedContours;
     VoronoiDiagram voronoid;
+    Vertex[] errorEdge;
+    Vertex[][] borders;
     int[][] labelMap;
 
     ZKTerrainAnalyzer(BufferedImage img){
@@ -21,7 +26,7 @@ public class ZKTerrainAnalyzer {
         labelMap = new int[height][width];
         fullContours = traceContours();
         simplifiedContours = simplifyContours();
-        voronoid = generateVoronoi(simplifiedContours);
+        voronoid = generateVoronoi((ArrayList<Contour>)simplifiedContours.clone());
     }
 
     public VoronoiDiagram getVoronoid(){
@@ -36,41 +41,163 @@ public class ZKTerrainAnalyzer {
         return simplifiedContours;
     }
 
+    int clamp(int value, int min, int max) {
+        return value;
+        //return Math.min(Math.max(value, min), max);
+    }
+
     private VoronoiDiagram generateVoronoi(ArrayList<Contour>obstacles){
         long timeStarted = System.currentTimeMillis();
 
         VoronoiDiagram vd = new VoronoiDiagram();
+
+        int w = bitMap.getWidth() - 1;
+        int h = bitMap.getHeight() - 1;
+
+        double width = (double)bitMap.getWidth();;
+        double height = (double)bitMap.getHeight();
+        double radius = Math.sqrt(width*width + height*height)/2;
+
+        Contour boundingBox = new Contour();
+        boundingBox.addPoint(1,1);
+        boundingBox.addPoint(w-1,1);
+        boundingBox.addPoint(w-1,h-1);
+        boundingBox.addPoint(1,h-1);
+
+        ArrayList<Vertex> allVertices = new ArrayList<>();
+        Vertex[][] contourVertices = new Vertex[obstacles.size()][];
         Iterator<Contour> i = obstacles.iterator();
-        Vertex[][] allVertices = new Vertex[obstacles.size()][];
+
         int v = 0;
+        // add vertices for detected contours
         while (i.hasNext()) {
             Point[] pts = i.next().getPointsArray();
             Vertex[] vertices = new Vertex[pts.length-1];
 
             // jopenvoronoi requires all points to be within a unit circle centered at zero
-            double width = (double)bitMap.getWidth();
-            double height = (double)bitMap.getHeight();
-            double radius = Math.sqrt(width*width + height*height)/2;
-
             // cast and add all vertices; skip last vertex of each contour
             for(int j=0;j < pts.length-1;j++){
                 double x = ((double)pts[j].x - width/2)/radius;
                 double y = ((double)pts[j].y - height/2)/radius;
                 vertices[j] = vd.insert_point_site(new org.rogach.jopenvoronoi.Point(x,y));
+                allVertices.add(vertices[j]);
             }
-            allVertices[v] = vertices;
+            contourVertices[v] = vertices;
             v++;
         }
+
+        // add vertices for corners
+        for(Point p:boundingBox.getPoints()){
+            double x = ((double)p.x - width/2)/radius;
+            double y = ((double)p.y - height/2)/radius;
+            allVertices.add(vd.insert_point_site(new org.rogach.jopenvoronoi.Point(x,y)));
+        }
+
+        // define borders
+        borders = new Vertex[4][];
+        double tolerance = 0.002;
+        borders[0] = getHorizontalBorder(vd,allVertices,-height/2/radius,tolerance); // north
+        borders[1] = getHorizontalBorder(vd,allVertices,+height/2/radius,tolerance); // south
+        borders[2] = getVerticalBorder(vd,allVertices,+width/2/radius,tolerance); // east
+        borders[3] = getVerticalBorder(vd,allVertices,-width/2/radius,tolerance); // west
+
         // assign segments
-        for(int vi=0;vi < allVertices.length;vi++) {
-            for (int j = 0; j < allVertices[vi].length; j++) {
-                int k = j + 1 < allVertices[vi].length ? j + 1 : 0;
-                vd.insert_line_site(allVertices[vi][j], allVertices[vi][k]);
+        for(int vi=0;vi < contourVertices.length;vi++) {
+            for (int j = 0; j < contourVertices[vi].length; j++) {
+                int k = j + 1 < contourVertices[vi].length ? j + 1 : 0;
+                // check if these two vertices were on a border, and thus already linked
+                boolean novel = true;
+                isNovel:
+                for(int l=0;l<borders.length;l++) {
+                    for (int n = 1; n < borders[l].length; n++) {
+                        if(borders[l][n-1] == contourVertices[vi][j] && borders[l][n] == contourVertices[vi][k]){
+                            System.out.println("Skipping duplicate border edge!");
+                            novel = false;
+                            break isNovel;
+                        }
+                        if(borders[l][n] == contourVertices[vi][j] && borders[l][n-1] == contourVertices[vi][k]){
+                            System.out.println("Skipping duplicate border edge!");
+                            novel = false;
+                            break isNovel;
+                        }
+                    }
+                }
+
+                if(novel) {
+                    try {
+                        vd.insert_line_site(contourVertices[vi][j], contourVertices[vi][k]);
+                    } catch (Exception e) {
+                        this.errorEdge = new Vertex[2];
+                        errorEdge[0] = contourVertices[vi][j];
+                        errorEdge[1] = contourVertices[vi][k];
+                        return vd;
+                    }
+                }
             }
         }
+
+        // assign borders
+        for(int l=0;l<borders.length;l++) {
+            for (int n = 1; n < borders[l].length; n++) {
+                try {
+                    vd.insert_line_site(borders[l][n - 1], borders[l][n]);
+                } catch (Exception e) {
+                    this.errorEdge = new Vertex[2];
+                    errorEdge[0] = borders[l][n - 1];
+                    errorEdge[1] = borders[l][n];
+                    return vd;
+                }
+            }
+        }
+
+
+
+
         System.out.println("Time spent generating voronoi: "+(System.currentTimeMillis() - timeStarted) + "ms");
 
         return vd;
+    }
+
+    class SortByX implements Comparator<Vertex>
+    {
+        public int compare(Vertex a, Vertex b)
+        {
+            return (int)Math.signum(a.position.x - b.position.x);
+        }
+    }
+
+    class SortByY implements Comparator<Vertex>
+    {
+        public int compare(Vertex a, Vertex b)
+        {
+            return (int)Math.signum(a.position.y - b.position.y);
+        }
+    }
+
+    // link vertices within a horizontal line with edges
+    private Vertex[] getHorizontalBorder(VoronoiDiagram vor, ArrayList<Vertex> vertices, double height, double tolerance){
+        ArrayList<Vertex> inTheWay = new ArrayList<>();
+        for(Vertex v:vertices){
+            if(Math.abs(v.position.y-height) < tolerance){
+                inTheWay.add(v);
+            }
+        }
+        System.out.println("Found "+inTheWay.size()+" vertices on horizontal border at "+height);
+        inTheWay.sort(new SortByX());
+        return inTheWay.toArray(new Vertex[inTheWay.size()]);
+    }
+
+    // link vertices within a vertical line with edges
+    private Vertex[] getVerticalBorder(VoronoiDiagram vor, ArrayList<Vertex> vertices, double width, double tolerance){
+        ArrayList<Vertex> inTheWay = new ArrayList<>();
+        for(Vertex v:vertices){
+            if(Math.abs(v.position.x-width) < tolerance){
+                inTheWay.add(v);
+            }
+        }
+        System.out.println("Found "+inTheWay.size()+" vertices on vertical border at "+width);
+        inTheWay.sort(new SortByY());
+        return inTheWay.toArray(new Vertex[inTheWay.size()]);
     }
 
     private ArrayList<Contour> simplifyContours(){
@@ -79,7 +206,7 @@ public class ZKTerrainAnalyzer {
         Iterator<Contour> i = fullContours.iterator();
         while (i.hasNext()) {
             Contour simplifiedContour = simplifyContour(i.next());
-            if(simplifiedContour.length() > 2){
+            if(simplifiedContour.length() > 3){
                 simple.add(simplifiedContour);
             }
         }
@@ -90,7 +217,7 @@ public class ZKTerrainAnalyzer {
     private Contour simplifyContour(Contour c) {
         Simplify<Point> simplify = new Simplify<Point>(new Point[0]);
         Point[] allPoints = c.getPointsArray();
-        Point[] lessPoints = simplify.simplify(allPoints, 10, true);
+        Point[] lessPoints = simplify.simplify(allPoints, 5, true);
 
         return new Contour(lessPoints);
 

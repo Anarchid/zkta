@@ -1,6 +1,6 @@
 import org.rogach.jopenvoronoi.Edge;
 import org.rogach.jopenvoronoi.HalfEdgeDiagram;
-import org.rogach.jopenvoronoi.VoronoiDiagram;
+import org.rogach.jopenvoronoi.Vertex;
 
 import javax.imageio.ImageIO;
 import javax.swing.JFrame;
@@ -54,6 +54,7 @@ public class ZKTAWindow {
             double width = img.getWidth();
             double height = img.getHeight();
             double radius = Math.sqrt(width*width+height*height)/2;
+            
             int edges = 0;
             bg.setColor(Color.BLUE);
             for (Edge e : g.edges) {
@@ -67,7 +68,7 @@ public class ZKTAWindow {
                 }
             }
 
-            bg.setColor(Color.RED);
+            bg.setColor(Color.YELLOW);
             for(int i = 0; i < simple.size();i++){
                 Contour contour = simple.get(i);
                 Point pp = contour.getPoint(0);
@@ -78,6 +79,30 @@ public class ZKTAWindow {
                     Point cp = contour.getPoint(p);
                     Point np = contour.getPoint(n);
                     bg.drawLine(cp.x,cp.y,np.x,np.y);
+                }
+            }
+
+
+
+            if(zkta.errorEdge != null){
+                bg.setColor(Color.RED);
+                org.rogach.jopenvoronoi.Point p1 = zkta.errorEdge[0].position;
+                org.rogach.jopenvoronoi.Point p2 = zkta.errorEdge[1].position;
+                int x1 = (int)Math.round(p1.x*radius + width/2);
+                int y1 = (int)Math.round(p1.y*radius + height/2);
+                int x2 = (int)Math.round(p2.x*radius + width/2);
+                int y2 = (int)Math.round(p2.y*radius + height/2);
+                bg.drawLine(x1,y1,x2,y2);
+                System.out.println("Voronoi errored on edge {<"+p1+">,<"+p2+">}");
+            }
+
+            bg.setColor(Color.RED);
+            for (Vertex[] va:zkta.borders){
+                for(Vertex v:va) {
+                    org.rogach.jopenvoronoi.Point p = v.position;
+                    int x = (int) Math.round(p.x * radius + width / 2);
+                    int y = (int) Math.round(p.y * radius + height / 2);
+                    bg.fillOval(x - 3, y - 3, 6, 6);
                 }
             }
 
