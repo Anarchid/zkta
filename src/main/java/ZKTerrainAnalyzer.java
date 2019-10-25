@@ -6,9 +6,7 @@ import com.goebl.simplify.Simplify;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.lang.reflect.Array;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.Iterator;
+import java.util.*;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
@@ -20,20 +18,77 @@ public class ZKTerrainAnalyzer {
     ArrayList<Contour> fullContours;
     ArrayList<Contour> simplifiedContours;
     VoronoiDiagram voronoid;
+    HalfEdgeDiagram graph;
     Vertex[] errorEdge;
     Vertex[][] borders;
     int[][] labelMap;
     RTree<Integer,Line> labelTree;
+    double v_width;
+    double v_height;
+    double radius;
+    int width;
+    int height;
+    ArrayList<Edge> pruned;
 
     ZKTerrainAnalyzer(BufferedImage img){
-        int width = img.getWidth();
-        int height = img.getHeight();
+        width = img.getWidth();
+        height = img.getHeight();
+        v_width = (double)width;
+        v_height = (double)height;
+        radius = Math.sqrt(width*width + height*height)/2;
+
         bitMap = img;
         labelMap = new int[height][width];
+        labelTree = RTree.create();
+
         fullContours = traceContours();
         simplifiedContours = simplifyContours();
-        labelTree = RTree.create();
         voronoid = generateVoronoi((ArrayList<Contour>)simplifiedContours.clone());
+        pruned = getPrunedEdges(voronoid);
+    }
+
+    public int[][] getLabelMap(){
+        return labelMap;
+    }
+
+    public int getHeight(){
+        return height;
+    }
+
+    public int getWidth(){
+        return width;
+    }
+
+    // probably need to convert them somehow?
+    private ArrayList<Edge> getPrunedEdges(VoronoiDiagram voronoid) {
+        HalfEdgeDiagram hed = voronoid.get_graph_reference();
+        ArrayList<Vertex> vertices = new ArrayList<>();
+        for(Vertex v:hed.vertices){
+            vertices.add(v);
+        }
+        ArrayList<Edge> pruned = new ArrayList<>();
+
+        for(Vertex v: vertices){
+            int[] c = coordsFromVoronoi(v);
+            // remove vertex if inside obstacle or on the border
+            c[0] = snap(snap(c[0],0,5),width,5);
+            c[1] = snap(snap(c[1],0,5),width,5);
+
+            if(c[0] < 0 || c[0] >= width || c[1]<0 || c[1] >= height) {
+                pruned.addAll(v.out_edges);
+                pruned.addAll(v.in_edges);
+            }
+            else if(labelMap[c[0]][c[1]] != 0){
+                pruned.addAll(v.out_edges);
+                pruned.addAll(v.in_edges);
+            }
+        }
+        System.out.println(pruned.size()+" voronoi edges pruned");
+        return pruned;
+    }
+
+    public HalfEdgeDiagram getGraph(){
+        return graph;
     }
 
     public VoronoiDiagram getVoronoid(){
@@ -57,22 +112,35 @@ public class ZKTerrainAnalyzer {
         return Math.abs(value-attractor)<tolerance?attractor:value;
     }
 
+    double[] coordsToVoronoi(int x, int y){
+        double vx = ((double)x - v_width/2)/radius;
+        double vy = ((double)y - v_height/2)/radius;
+        return new double[]{vx, vy};
+    }
+
+    int[] coordsFromVoronoi(Vertex v){
+        return coordsFromVoronoi(v.position);
+    }
+
+    int[] coordsFromVoronoi(org.rogach.jopenvoronoi.Point p){
+        return coordsFromVoronoi(p.x,p.y);
+    }
+
+    int[] coordsFromVoronoi(double x, double y){
+        int ix = (int)Math.round(x*radius + v_width/2);
+        int iy = (int)Math.round(y*radius + v_height/2);
+        return new int[]{ix,iy};
+    }
+
     private VoronoiDiagram generateVoronoi(ArrayList<Contour>obstacles){
         long timeStarted = System.currentTimeMillis();
         VoronoiDiagram vd = new VoronoiDiagram();
 
-        int w = bitMap.getWidth() - 1;
-        int h = bitMap.getHeight() - 1;
-
-        double width = (double)bitMap.getWidth();;
-        double height = (double)bitMap.getHeight();
-        double radius = Math.sqrt(width*width + height*height)/2;
-
         Point[] boundingBox = new Point[4];
         boundingBox[0] = new Point(1,1);
-        boundingBox[1] = new Point(w-1,1);
-        boundingBox[2] = new Point(w-1,h-1);
-        boundingBox[3] = new Point(1,h-1);
+        boundingBox[1] = new Point(width-1,1);
+        boundingBox[2] = new Point(width-1,height-1);
+        boundingBox[3] = new Point(1,height-1);
 
         Vertex[] cornerVertices = new Vertex[4];
 
@@ -92,11 +160,11 @@ public class ZKTerrainAnalyzer {
                 // snap to border because of voodoo:
                 // first, bwta2 does this for some reason
                 // second, skipping this causes NPE in voronoi
-                int px = snap(snap(pts[j].x, w,5),1,5);
-                int py = snap(snap(pts[j].y, h,5),1,5);
-                double vx = ((double)px - width/2)/radius;
-                double vy = ((double)py - height/2)/radius;
-                vertices[j] = vd.insert_point_site(new org.rogach.jopenvoronoi.Point(vx,vy));
+                int px = snap(snap(pts[j].x, width,5),1,5);
+                int py = snap(snap(pts[j].y, height,5),1,5);
+                double[] vc = coordsToVoronoi(px,py);
+
+                vertices[j] = vd.insert_point_site(new org.rogach.jopenvoronoi.Point(vc[0],vc[1]));
                 allVertices.add(vertices[j]);
             }
             contourVertices[v] = vertices;
@@ -106,9 +174,8 @@ public class ZKTerrainAnalyzer {
         // add vertices for corners
         for(int z = 0; z < boundingBox.length;z++){
             Point p = boundingBox[z];
-            double x = ((double)p.x - width/2)/radius;
-            double y = ((double)p.y - height/2)/radius;
-            Vertex cv = vd.insert_point_site(new org.rogach.jopenvoronoi.Point(x,y));
+            double[] vc = coordsToVoronoi(p.x,p.y);
+            Vertex cv = vd.insert_point_site(new org.rogach.jopenvoronoi.Point(vc[0],vc[1]));
             cornerVertices[z] = cv;
         }
 
@@ -130,12 +197,10 @@ public class ZKTerrainAnalyzer {
                 for(int l=0;l<borders.length;l++) {
                     for (int n = 1; n < borders[l].length; n++) {
                         if(borders[l][n-1] == contourVertices[vi][j] && borders[l][n] == contourVertices[vi][k]){
-                            System.out.println("Skipping duplicate border edge!");
                             novel = false;
                             break isNovel;
                         }
                         if(borders[l][n] == contourVertices[vi][j] && borders[l][n-1] == contourVertices[vi][k]){
-                            System.out.println("Skipping duplicate border edge!");
                             novel = false;
                             break isNovel;
                         }
@@ -143,7 +208,6 @@ public class ZKTerrainAnalyzer {
                 }
 
                 if(novel) {
-                    System.out.println("Adding segment "+k+" of contour "+vi);
                     Vertex v1 = contourVertices[vi][j];
                     Vertex v2 = contourVertices[vi][k];
                     try {
@@ -180,7 +244,7 @@ public class ZKTerrainAnalyzer {
             }
         }
 
-        System.out.println("Time spent generating voronoi: "+(System.currentTimeMillis() - timeStarted) + "ms");
+        System.out.println("Generated voronoi and r-tree in "+(System.currentTimeMillis() - timeStarted) + "ms");
 
         return vd;
     }

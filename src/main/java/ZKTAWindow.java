@@ -32,6 +32,17 @@ public class ZKTAWindow {
             bg.setColor(Color.BLACK);
             bg.fillRect ( 0, 0, img.getWidth(), img.getHeight() );
 
+            bg.setColor(Color.DARK_GRAY);
+            int[][] lm = zkta.getLabelMap();
+
+            for(int x=0; x < zkta.getWidth(); x++ ){
+                for(int y=0; y < zkta.getHeight(); y++ ){
+                    if(lm[x][y] != 0){
+                        bg.drawLine(x,y,x,y);
+                    }
+                }
+            }
+
             bg.setColor(Color.GREEN);
             int fullSizePoints = 0;
 
@@ -48,23 +59,25 @@ public class ZKTAWindow {
 
             int simplifiedPoints = 0;
 
-
             HalfEdgeDiagram g = zkta.getVoronoid().get_graph_reference();
-            // rescale points back to heightmap scale
-            double width = img.getWidth();
-            double height = img.getHeight();
-            double radius = Math.sqrt(width*width+height*height)/2;
+            ArrayList<Edge> pruned = zkta.pruned;
 
             int edges = 0;
-            bg.setColor(Color.BLUE);
+
             for (Edge e : g.edges) {
                 if (e.valid) {
+                    int[] v1 = zkta.coordsFromVoronoi(e.source);
+                    int[] v2 = zkta.coordsFromVoronoi(e.target);
+
+                    if(zkta.pruned.contains(e)){
+                        bg.setColor(Color.LIGHT_GRAY);
+                    }else{
+                        bg.setColor(Color.CYAN);
+                        bg.fillOval(v1[0] - 3, v1[1] - 3, 6, 6);
+                        bg.fillOval(v2[0] - 3, v2[1] - 3, 6, 6);
+                    }
                     edges++;
-                    int x1 = (int)Math.round(e.source.position.x*radius + width/2);
-                    int y1 = (int)Math.round(e.source.position.y*radius + height/2);
-                    int x2 = (int)Math.round(e.target.position.x*radius + width/2);
-                    int y2 = (int)Math.round(e.target.position.y*radius + height/2);
-                    bg.drawLine(x1,y1,x2,y2);
+                    bg.drawLine(v1[0],v1[1],v2[0],v2[1]);
                 }
             }
 
@@ -86,22 +99,10 @@ public class ZKTAWindow {
                 bg.setColor(Color.RED);
                 org.rogach.jopenvoronoi.Point p1 = zkta.errorEdge[0].position;
                 org.rogach.jopenvoronoi.Point p2 = zkta.errorEdge[1].position;
-                int x1 = (int)Math.round(p1.x*radius + width/2);
-                int y1 = (int)Math.round(p1.y*radius + height/2);
-                int x2 = (int)Math.round(p2.x*radius + width/2);
-                int y2 = (int)Math.round(p2.y*radius + height/2);
-                bg.drawLine(x1,y1,x2,y2);
+                int[] v1 = zkta.coordsFromVoronoi(p1);
+                int[] v2 = zkta.coordsFromVoronoi(p2);
+                bg.drawLine(v1[0],v1[1],v2[0],v2[1]);
                 System.out.println("Voronoi errored on edge {<"+p1+">,<"+p2+">}");
-            }
-
-            bg.setColor(Color.CYAN);
-            for (Vertex[] va:zkta.borders){
-                for(Vertex v:va) {
-                    org.rogach.jopenvoronoi.Point p = v.position;
-                    int x = (int) Math.round(p.x * radius + width / 2);
-                    int y = (int) Math.round(p.y * radius + height / 2);
-                    bg.fillOval(x - 3, y - 3, 6, 6);
-                }
             }
 
             System.out.println("Total contour points: "+fullSizePoints);
