@@ -46,6 +46,10 @@ public class ZKTerrainAnalyzer {
         //return Math.min(Math.max(value, min), max);
     }
 
+    int snap(int value, int attractor, int tolerance){
+        return Math.abs(value-attractor)<tolerance?attractor:value;
+    }
+
     private VoronoiDiagram generateVoronoi(ArrayList<Contour>obstacles){
         long timeStarted = System.currentTimeMillis();
 
@@ -58,11 +62,13 @@ public class ZKTerrainAnalyzer {
         double height = (double)bitMap.getHeight();
         double radius = Math.sqrt(width*width + height*height)/2;
 
-        Contour boundingBox = new Contour();
-        boundingBox.addPoint(1,1);
-        boundingBox.addPoint(w-1,1);
-        boundingBox.addPoint(w-1,h-1);
-        boundingBox.addPoint(1,h-1);
+        Point[] boundingBox = new Point[4];
+        boundingBox[0] = new Point(0,0);
+        boundingBox[1] = new Point(w-1,0);
+        boundingBox[2] = new Point(w-1,h-1);
+        boundingBox[3] = new Point(0,h-1);
+
+        Vertex[] cornerVertices = new Vertex[4];
 
         ArrayList<Vertex> allVertices = new ArrayList<>();
         Vertex[][] contourVertices = new Vertex[obstacles.size()][];
@@ -77,9 +83,14 @@ public class ZKTerrainAnalyzer {
             // jopenvoronoi requires all points to be within a unit circle centered at zero
             // cast and add all vertices; skip last vertex of each contour
             for(int j=0;j < pts.length-1;j++){
-                double x = ((double)pts[j].x - width/2)/radius;
-                double y = ((double)pts[j].y - height/2)/radius;
-                vertices[j] = vd.insert_point_site(new org.rogach.jopenvoronoi.Point(x,y));
+                // snap to border because of voodoo:
+                // first, bwta2 does this for some reason
+                // second, skipping this causes NPE in voronoi
+                int px = snap(snap(pts[j].x, w,5),0,5);
+                int py = snap(snap(pts[j].y, h,5),0,5);
+                double vx = ((double)px - width/2)/radius;
+                double vy = ((double)py - height/2)/radius;
+                vertices[j] = vd.insert_point_site(new org.rogach.jopenvoronoi.Point(vx,vy));
                 allVertices.add(vertices[j]);
             }
             contourVertices[v] = vertices;
@@ -87,19 +98,21 @@ public class ZKTerrainAnalyzer {
         }
 
         // add vertices for corners
-        for(Point p:boundingBox.getPoints()){
+        for(int z = 0; z < boundingBox.length;z++){
+            Point p = boundingBox[z];
             double x = ((double)p.x - width/2)/radius;
             double y = ((double)p.y - height/2)/radius;
-            allVertices.add(vd.insert_point_site(new org.rogach.jopenvoronoi.Point(x,y)));
+            Vertex cv = vd.insert_point_site(new org.rogach.jopenvoronoi.Point(x,y));
+            cornerVertices[z] = cv;
         }
 
         // define borders
         borders = new Vertex[4][];
-        double tolerance = 0.002;
-        borders[0] = getHorizontalBorder(vd,allVertices,-height/2/radius,tolerance); // north
-        borders[1] = getHorizontalBorder(vd,allVertices,+height/2/radius,tolerance); // south
-        borders[2] = getVerticalBorder(vd,allVertices,+width/2/radius,tolerance); // east
-        borders[3] = getVerticalBorder(vd,allVertices,-width/2/radius,tolerance); // west
+        double tolerance = 0.005;
+        borders[0] = getHorizontalBorder(allVertices,cornerVertices[0],cornerVertices[1],tolerance); // north
+        borders[1] = getHorizontalBorder(allVertices,cornerVertices[2],cornerVertices[3],tolerance); // south
+        borders[2] = getVerticalBorder(allVertices,cornerVertices[1],cornerVertices[2],tolerance); // east
+        borders[3] = getVerticalBorder(allVertices,cornerVertices[0],cornerVertices[3],tolerance); // west
 
         // assign segments
         for(int vi=0;vi < contourVertices.length;vi++) {
@@ -142,6 +155,7 @@ public class ZKTerrainAnalyzer {
                 try {
                     vd.insert_line_site(borders[l][n - 1], borders[l][n]);
                 } catch (Exception e) {
+                    e.printStackTrace();
                     this.errorEdge = new Vertex[2];
                     errorEdge[0] = borders[l][n - 1];
                     errorEdge[1] = borders[l][n];
@@ -175,8 +189,14 @@ public class ZKTerrainAnalyzer {
     }
 
     // link vertices within a horizontal line with edges
-    private Vertex[] getHorizontalBorder(VoronoiDiagram vor, ArrayList<Vertex> vertices, double height, double tolerance){
+    private Vertex[] getHorizontalBorder(ArrayList<Vertex> vertices,Vertex left, Vertex right, double tolerance){
         ArrayList<Vertex> inTheWay = new ArrayList<>();
+
+        double height = (left.position.y+right.position.y)/2;
+
+        inTheWay.add(left);
+        inTheWay.add(right);
+
         for(Vertex v:vertices){
             if(Math.abs(v.position.y-height) < tolerance){
                 inTheWay.add(v);
@@ -188,8 +208,11 @@ public class ZKTerrainAnalyzer {
     }
 
     // link vertices within a vertical line with edges
-    private Vertex[] getVerticalBorder(VoronoiDiagram vor, ArrayList<Vertex> vertices, double width, double tolerance){
+    private Vertex[] getVerticalBorder(ArrayList<Vertex> vertices, Vertex top, Vertex bottom, double tolerance){
         ArrayList<Vertex> inTheWay = new ArrayList<>();
+        double width = (top.position.x+bottom.position.x)/2;
+        inTheWay.add(top);
+        inTheWay.add(bottom);
         for(Vertex v:vertices){
             if(Math.abs(v.position.x-width) < tolerance){
                 inTheWay.add(v);

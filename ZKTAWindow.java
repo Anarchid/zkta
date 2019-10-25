@@ -54,7 +54,7 @@ public class ZKTAWindow {
             double width = img.getWidth();
             double height = img.getHeight();
             double radius = Math.sqrt(width*width+height*height)/2;
-            
+
             int edges = 0;
             bg.setColor(Color.BLUE);
             for (Edge e : g.edges) {
@@ -82,8 +82,6 @@ public class ZKTAWindow {
                 }
             }
 
-
-
             if(zkta.errorEdge != null){
                 bg.setColor(Color.RED);
                 org.rogach.jopenvoronoi.Point p1 = zkta.errorEdge[0].position;
@@ -96,7 +94,7 @@ public class ZKTAWindow {
                 System.out.println("Voronoi errored on edge {<"+p1+">,<"+p2+">}");
             }
 
-            bg.setColor(Color.RED);
+            bg.setColor(Color.CYAN);
             for (Vertex[] va:zkta.borders){
                 for(Vertex v:va) {
                     org.rogach.jopenvoronoi.Point p = v.position;
