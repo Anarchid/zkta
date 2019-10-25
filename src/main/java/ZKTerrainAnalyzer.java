@@ -1,11 +1,16 @@
+import com.github.davidmoten.rtree.RTree;
+import com.github.davidmoten.rtree.geometry.Geometries;
+import com.github.davidmoten.rtree.geometry.Line;
 import com.goebl.simplify.Simplify;
 
 import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 import org.rogach.jopenvoronoi.*;
 
@@ -18,6 +23,7 @@ public class ZKTerrainAnalyzer {
     Vertex[] errorEdge;
     Vertex[][] borders;
     int[][] labelMap;
+    RTree<Integer,Line> labelTree;
 
     ZKTerrainAnalyzer(BufferedImage img){
         int width = img.getWidth();
@@ -26,6 +32,7 @@ public class ZKTerrainAnalyzer {
         labelMap = new int[height][width];
         fullContours = traceContours();
         simplifiedContours = simplifyContours();
+        labelTree = RTree.create();
         voronoid = generateVoronoi((ArrayList<Contour>)simplifiedContours.clone());
     }
 
@@ -52,7 +59,6 @@ public class ZKTerrainAnalyzer {
 
     private VoronoiDiagram generateVoronoi(ArrayList<Contour>obstacles){
         long timeStarted = System.currentTimeMillis();
-
         VoronoiDiagram vd = new VoronoiDiagram();
 
         int w = bitMap.getWidth() - 1;
@@ -63,10 +69,10 @@ public class ZKTerrainAnalyzer {
         double radius = Math.sqrt(width*width + height*height)/2;
 
         Point[] boundingBox = new Point[4];
-        boundingBox[0] = new Point(0,0);
-        boundingBox[1] = new Point(w-1,0);
+        boundingBox[0] = new Point(1,1);
+        boundingBox[1] = new Point(w-1,1);
         boundingBox[2] = new Point(w-1,h-1);
-        boundingBox[3] = new Point(0,h-1);
+        boundingBox[3] = new Point(1,h-1);
 
         Vertex[] cornerVertices = new Vertex[4];
 
@@ -86,8 +92,8 @@ public class ZKTerrainAnalyzer {
                 // snap to border because of voodoo:
                 // first, bwta2 does this for some reason
                 // second, skipping this causes NPE in voronoi
-                int px = snap(snap(pts[j].x, w,5),0,5);
-                int py = snap(snap(pts[j].y, h,5),0,5);
+                int px = snap(snap(pts[j].x, w,5),1,5);
+                int py = snap(snap(pts[j].y, h,5),1,5);
                 double vx = ((double)px - width/2)/radius;
                 double vy = ((double)py - height/2)/radius;
                 vertices[j] = vd.insert_point_site(new org.rogach.jopenvoronoi.Point(vx,vy));
@@ -137,14 +143,20 @@ public class ZKTerrainAnalyzer {
                 }
 
                 if(novel) {
+                    System.out.println("Adding segment "+k+" of contour "+vi);
+                    Vertex v1 = contourVertices[vi][j];
+                    Vertex v2 = contourVertices[vi][k];
                     try {
-                        vd.insert_line_site(contourVertices[vi][j], contourVertices[vi][k]);
+                        vd.insert_line_site(v1, v2);
                     } catch (Exception e) {
                         this.errorEdge = new Vertex[2];
                         errorEdge[0] = contourVertices[vi][j];
                         errorEdge[1] = contourVertices[vi][k];
                         return vd;
                     }
+                    // this should map the label of the closest obstacle, but pruning and relabeling too small
+                    // components so far has been skipped, so the indices are unreliable!
+                    labelTree = labelTree.add(vi, Geometries.line(v1.position.x,v1.position.y,v2.position.x,v2.position.y));
                 }
             }
         }
@@ -152,8 +164,10 @@ public class ZKTerrainAnalyzer {
         // assign borders
         for(int l=0;l<borders.length;l++) {
             for (int n = 1; n < borders[l].length; n++) {
+                Vertex v1 = borders[l][n - 1];
+                Vertex v2 = borders[l][n];
                 try {
-                    vd.insert_line_site(borders[l][n - 1], borders[l][n]);
+                    vd.insert_line_site(v1, v2);
                 } catch (Exception e) {
                     e.printStackTrace();
                     this.errorEdge = new Vertex[2];
@@ -161,11 +175,10 @@ public class ZKTerrainAnalyzer {
                     errorEdge[1] = borders[l][n];
                     return vd;
                 }
+                // -1 will meant to us that the obstacle is edge of map
+                labelTree = labelTree.add(-1, Geometries.line(v1.position.x,v1.position.y,v2.position.x,v2.position.y));
             }
         }
-
-
-
 
         System.out.println("Time spent generating voronoi: "+(System.currentTimeMillis() - timeStarted) + "ms");
 
