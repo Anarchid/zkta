@@ -167,10 +167,7 @@ public class ZKTAWindow {
             }
 
             bg.setColor(Color.ORANGE);
-            for (Map.Entry<Integer, Contour> entry : zkta.holes.entrySet()) {
-                Contour contour = entry.getValue();
-                //fillHole(contour, img);
-                bg.drawString(""+entry.getKey(),contour.getPoint(0).x-10,contour.getPoint(0).y-10);
+            for (LabeledContour contour:zkta.holes) {
                 for(int p = 0; p < contour.length();p++){
                     int n = p + 1 < contour.length()? p+1 : 0;
                     Point cp = contour.getPoint(p);

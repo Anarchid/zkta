@@ -10,6 +10,7 @@ import java.util.*;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
+import javafx.scene.control.Labeled;
 import org.rogach.jopenvoronoi.*;
 
 public class ZKTerrainAnalyzer {
@@ -21,7 +22,7 @@ public class ZKTerrainAnalyzer {
     HalfEdgeDiagram graph;
     Vertex[] errorEdge;
     Vertex[][] borders;
-    public HashMap<Integer,Contour> holes;
+    public ArrayList<LabeledContour> holes;
     int[][] labelMap;
     RTree<Integer,Line> labelTree;
     double v_width;
@@ -41,7 +42,7 @@ public class ZKTerrainAnalyzer {
         bitMap = img;
         labelMap = new int[height][width];
         labelTree = RTree.create();
-        holes = new HashMap<>();
+        holes = new ArrayList<>();
         fullContours = traceContours();
         simplifiedContours = simplifyContours();
         voronoid = generateVoronoi((ArrayList<Contour>)simplifiedContours.clone());
@@ -393,9 +394,9 @@ public class ZKTerrainAnalyzer {
                     if (labelMap[cx][cy] == 0) {
                         tracingDirection = 1;
                         // TODO: retain holes if they are interesting (large) enough
-                        Contour hole = traceContour(cx, cy-1, labelId, tracingDirection);
+                        LabeledContour hole = new LabeledContour(traceContour(cx, cy-1, labelId, tracingDirection),labelId);
                         fillHole(hole, labelId);
-                        holes.put(labelId, hole);
+                        holes.add(hole);
 
                         /*
                         BoostPolygon polygon;
