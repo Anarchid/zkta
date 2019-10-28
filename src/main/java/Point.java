@@ -26,4 +26,13 @@ public class Point implements com.goebl.simplify.Point{
     public double getY() {
         return y;
     }
+
+    @Override
+    public boolean equals(Object obj) {
+        if(obj instanceof Point){
+            Point p = (Point)obj;
+            return p.x == x && p.y == y;
+        }
+        return false;
+    }
 }

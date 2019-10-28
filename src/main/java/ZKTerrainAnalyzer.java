@@ -21,6 +21,7 @@ public class ZKTerrainAnalyzer {
     HalfEdgeDiagram graph;
     Vertex[] errorEdge;
     Vertex[][] borders;
+    public HashMap<Integer,Contour> holes;
     int[][] labelMap;
     RTree<Integer,Line> labelTree;
     double v_width;
@@ -40,7 +41,7 @@ public class ZKTerrainAnalyzer {
         bitMap = img;
         labelMap = new int[height][width];
         labelTree = RTree.create();
-
+        holes = new HashMap<>();
         fullContours = traceContours();
         simplifiedContours = simplifyContours();
         voronoid = generateVoronoi((ArrayList<Contour>)simplifiedContours.clone());
@@ -279,7 +280,6 @@ public class ZKTerrainAnalyzer {
                 inTheWay.add(v);
             }
         }
-        System.out.println("Found "+inTheWay.size()+" vertices on horizontal border at "+height);
         inTheWay.sort(new SortByX());
         return inTheWay.toArray(new Vertex[inTheWay.size()]);
     }
@@ -295,7 +295,6 @@ public class ZKTerrainAnalyzer {
                 inTheWay.add(v);
             }
         }
-        System.out.println("Found "+inTheWay.size()+" vertices on vertical border at "+width);
         inTheWay.sort(new SortByY());
         return inTheWay.toArray(new Vertex[inTheWay.size()]);
     }
@@ -317,10 +316,49 @@ public class ZKTerrainAnalyzer {
     private Contour simplifyContour(Contour c) {
         Simplify<Point> simplify = new Simplify<Point>(new Point[0]);
         Point[] allPoints = c.getPointsArray();
-        Point[] lessPoints = simplify.simplify(allPoints, 5, true);
+        Point[] lessPoints = simplify.simplify(allPoints, 8, true);
 
         return new Contour(lessPoints);
 
+    }
+
+    // fill a non-simplified hole polygon with appropriate obstacle label
+    private void fillHole(Contour hole, int labelID){
+        int[] bounds = hole.getBounds();
+
+        ArrayList<Point> points = hole.getPoints();
+
+        for(int y = bounds[2];y<bounds[3];y++) {
+            ArrayList<Integer> scanLine = new ArrayList<>();
+            for(Point p: points){
+                if(p.y == y){
+                    scanLine.add(p.x);
+                }
+            }
+            Integer[] intersects = new Integer[scanLine.size()];
+            scanLine.toArray(intersects);
+            Arrays.sort(intersects);
+
+            if(intersects.length > 1) {
+                boolean inside = false;
+                for (int n = 0; n < intersects.length-1; n += 1) {
+                    inside = !inside;
+
+                    int min = intersects[n];
+                    int max = intersects[n+1];
+
+                    if (max <= min+1){
+                        inside = false;
+                    }
+
+                    if(inside){
+                        for(int x = min;x<max;x++){
+                            labelMap[x][y] = labelID;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private ArrayList<Contour> traceContours()
@@ -329,7 +367,7 @@ public class ZKTerrainAnalyzer {
         int cy, cx, tracingDirection, connectedComponentsCount = 0, labelId = 0;
         int width = bitMap.getWidth();
         int height = bitMap.getHeight();
-        ArrayList<Contour> holes = new ArrayList<Contour>();
+
         ArrayList<Contour> contours = new ArrayList<Contour>();
 
         for (cx = 0; cx < width; ++cx) {
@@ -354,14 +392,14 @@ public class ZKTerrainAnalyzer {
                 } else if (labelId != 0) { // walkable & pre-pixel has been labeled
                     if (labelMap[cx][cy] == 0) {
                         tracingDirection = 1;
-                        // internal contour
-                        Contour hole = traceContour(cx, cy - 1, labelId, tracingDirection);
+                        // TODO: retain holes if they are interesting (large) enough
+                        holes.put(labelId, traceContour(cx, cy - 1, labelId, tracingDirection));
+
                         /*
                         BoostPolygon polygon;
                         boost::geometry::assign_points(polygon, hole);
                         // if polygon isn't too small, add it to the result
                         if (boost::geometry::area(polygon) > MIN_ARE_POLYGON) {
-                            // TODO a polygon can have walkable polygons as "holes", save them
                             LOG(" - [WARNING] Found big walkable HOLE");
                         } else {
                             // "remove" the hole filling it with the polygon label
@@ -373,6 +411,11 @@ public class ZKTerrainAnalyzer {
                 }
             }
         }
+
+        for (Map.Entry<Integer, Contour> entry : holes.entrySet()) {
+            fillHole(entry.getValue(),255);
+        }
+
         System.out.println("Total time spent tracing: "+(System.currentTimeMillis() - timeStarted) + "ms");
         return contours;
     }

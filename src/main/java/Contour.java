@@ -25,6 +25,20 @@ public class Contour {
         return this.points;
     }
 
+    int[] getBounds(){
+        if(points.size() == 0){
+            return null;
+        }
+        int minX=Integer.MAX_VALUE,minY=Integer.MAX_VALUE,maxX=0, maxY=0;
+        for(Point p: points){
+            minX = Math.min(p.x,minX);
+            maxX = Math.max(p.x,maxX);
+            minY = Math.min(p.y,minY);
+            maxY = Math.max(p.y,maxY);
+        }
+        return new int[]{minX, maxX,minY, maxY};
+    }
+
     Point[] getPointsArray(){
         Point[] a = new Point[this.points.size()];
         return this.points.toArray(a);
