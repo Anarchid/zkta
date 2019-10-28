@@ -393,7 +393,9 @@ public class ZKTerrainAnalyzer {
                     if (labelMap[cx][cy] == 0) {
                         tracingDirection = 1;
                         // TODO: retain holes if they are interesting (large) enough
-                        holes.put(labelId, traceContour(cx, cy - 1, labelId, tracingDirection));
+                        Contour hole = traceContour(cx, cy-1, labelId, tracingDirection);
+                        fillHole(hole, labelId);
+                        holes.put(labelId, hole);
 
                         /*
                         BoostPolygon polygon;
@@ -410,10 +412,6 @@ public class ZKTerrainAnalyzer {
                     labelId = 0;
                 }
             }
-        }
-
-        for (Map.Entry<Integer, Contour> entry : holes.entrySet()) {
-            fillHole(entry.getValue(),255);
         }
 
         System.out.println("Total time spent tracing: "+(System.currentTimeMillis() - timeStarted) + "ms");
