@@ -11,7 +11,6 @@ import java.util.*;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
-import javafx.scene.control.Labeled;
 import org.rogach.jopenvoronoi.*;
 
 public class ZKTerrainAnalyzer {
@@ -20,7 +19,6 @@ public class ZKTerrainAnalyzer {
     ArrayList<Contour> fullContours;
     ArrayList<Contour> simplifiedContours;
     VoronoiDiagram voronoid;
-    HalfEdgeDiagram graph;
     Vertex[] errorEdge;
     Vertex[][] borders;
     public ArrayList<LabeledContour> holes;
@@ -33,6 +31,7 @@ public class ZKTerrainAnalyzer {
     double diagonal;
     int width;
     int height;
+    static int TOO_CLOSE_TO_OBSTACLE = 5;
     ArrayList<Edge> pruned;
 
     ZKTerrainAnalyzer(BufferedImage img){
@@ -51,6 +50,7 @@ public class ZKTerrainAnalyzer {
         voronoid = generateVoronoi((ArrayList<Contour>)simplifiedContours.clone());
         pruned = getPrunedEdges(voronoid);
         labelTree = createRTree();
+        regions = pruneGraph(convertGraph(voronoid.get_graph_reference()));
     }
 
     public int[][] getLabelMap(){
@@ -63,6 +63,10 @@ public class ZKTerrainAnalyzer {
 
     public int getWidth(){
         return width;
+    }
+
+    public RegionGraph getRegions(){
+        return regions;
     }
 
     private RTree<Integer,Line> createRTree(){
@@ -93,46 +97,74 @@ public class ZKTerrainAnalyzer {
         return (float) Math.abs(dot) / Math.sqrt(len_sq);
     }
 
+    private double getDistanceToObstacle(Node n){
+        rx.Observable<Entry<Integer,Line>> closestObstacle = labelTree.nearest((Geometries.point(n.position.x,n.position.y)),radius*2,1);
+        Line l = closestObstacle.toBlocking().first().geometry();
+        return distanceToLine(n.position, l);
+    }
+
     private RegionGraph pruneGraph(RegionGraph graph)
     {
         // get the list of all leafs (nodes with only one element in the adjacent list)
-        Queue<Node> nodeToPrune = new PriorityQueue<>();
+        LinkedList<Node> nodeToPrune = new LinkedList<>();
         for(Node n:graph.nodes){
             if(n.neighbours.size() == 1){
                 nodeToPrune.add(n);
             }
         }
 
+        System.out.println("Beginning region discovery with "+nodeToPrune.size()+" leaf nodes");
+        int removed = 0;
+
         // using leafs as starting points, prune the RegionGraph
         while (!nodeToPrune.isEmpty()) {
             // pop first element
             Node n0 = nodeToPrune.poll();
 
+            // keep isolated nodes
             if (n0.neighbours.isEmpty())  continue;
 
-            Node n1 = n0.neighbours.iterator().next();//*graph.adjacencyList[v0].begin();
+            System.out.println("processing node @"+n0.position);
+
+            Node n1 = n0.neighbours.iterator().next();
 
             // find distance to nearest obstacle
-            rx.Observable<Entry<Integer,Line>> closest = labelTree.nearest((Geometries.point(n1.position.x,n1.position.y)),radius*2,1);
-            Line l = closest.toBlocking().first().geometry();
-            double  distance = distanceToLine(n0.position, l);
-            // remove node if it's too close to an obstacle, or parent is farther to an obstacle
+            double dist_0 = getDistanceToObstacle(n0);
+            System.out.println("Distance to obstacle: "+dist_0);
+            double dist_1 = 0;
+            boolean deleted = false;
+            if(dist_0 < TOO_CLOSE_TO_OBSTACLE){
+                System.out.println("Too close, removing!");
+                removed++;
+                deleted = true;
+                graph.removeNode(n0);
+            }else{
+                dist_1 = getDistanceToObstacle(n1);
+                System.out.println("Parent node distance to obstacle: "+dist_1);
+                deleted = true;
+                if(dist_0 - 0.9 < dist_1){
+                    System.out.println("Parent is farther from obstacle - removing!");
 
-            /*
-            if (labelTree.nearest(n1.position,radius*2,1) < MIN_REGION_OBST_DIST
-                    || graph.minDistToObstacle[v0] - 0.9 <= graph.minDistToObstacle[v1])
-            {
-                graph.adjacencyList[v0].clear();
-                graph.adjacencyList[v1].erase(v0);
-
-                if (graph.adjacencyList[v1].empty() && graph.minDistToObstacle[v1] > MIN_REGION_OBST_DIST) {
-                    // isolated node
-                    graph.markNodeAsRegion(v1);
-                } else if (graph.adjacencyList[v1].size() == 1) { // keep pruning if only one child
-                    nodeToPrune.push(v1);
+                    removed++;
+                    graph.removeNode(n0);
                 }
-            }*/
+            }
+
+            if(deleted){
+                System.out.println("parent now has degree "+n1.neighbours.size());
+                if (n1.neighbours.isEmpty() &&  dist_1 > TOO_CLOSE_TO_OBSTACLE) {
+                    // isolated node
+                    graph.setNodeAsRegion(n1);
+                    System.out.println("marked parent as region");
+
+                } else if (n1.neighbours.size() == 1) { // keep pruning if only one child
+                    System.out.println("queued parent for processing");
+                    nodeToPrune.add(n1);
+                }
+            }
         }
+        System.out.println("Total nodes removed during discovery "+removed);
+        System.out.println("Total nodes retained during discovery: "+graph.nodes.size());
         return graph;
     }
 
@@ -140,7 +172,7 @@ public class ZKTerrainAnalyzer {
         HashMap<Vertex,Node> nodes = new HashMap<>();
         for (Edge e : g.edges) {
             if (e.valid) {
-                if(!pruned.contains(e)){
+                if(!pruned.contains(e)){ // replace with inline check
                     Node n1 = vertexToNode(nodes, e.source);
                     Node n2 = vertexToNode(nodes, e.target);
                     n1.addNeighbour(n2);
@@ -148,15 +180,18 @@ public class ZKTerrainAnalyzer {
                 }
             }
         }
-        return new RegionGraph();
-    }
+        System.out.println("Converted voronoid to regiongraph with "+nodes.size()+" nodes");
+        return new RegionGraph(nodes.values());
+   }
 
     private Node vertexToNode(HashMap<Vertex,Node>nodes, Vertex v){
         if(nodes.containsKey(v)){
             return nodes.get(v);
         }
         int[] v1 = this.coordsFromVoronoi(v);
-        return new Node(v1[0],v1[2]);
+        Node n = new Node(v1[0],v1[1]);
+        nodes.put(v,n);
+        return n;
     }
 
     private ArrayList<Edge> getPrunedEdges(VoronoiDiagram voronoid) {
@@ -173,7 +208,7 @@ public class ZKTerrainAnalyzer {
             c[0] = snap(snap(c[0],0,5),width,5);
             c[1] = snap(snap(c[1],0,5),width,5);
 
-            if(c[0] < 0 || c[0] >= width || c[1]<0 || c[1] >= height) {
+            if(c[0] < 0 || c[0] >= width || c[1] < 1 || c[1] >= height) {
                 pruned.addAll(v.out_edges);
                 pruned.addAll(v.in_edges);
             }
@@ -184,10 +219,6 @@ public class ZKTerrainAnalyzer {
         }
         System.out.println(pruned.size()+" voronoi edges pruned");
         return pruned;
-    }
-
-    public HalfEdgeDiagram getGraph(){
-        return graph;
     }
 
     public VoronoiDiagram getVoronoid(){
@@ -550,11 +581,11 @@ public class ZKTerrainAnalyzer {
 
     static int[][] searchDirection = { { 1, 0 }, { 1, 1 }, { 0 , 1 }, { -1, 1 }, { -1, 0 }, { -1, -1 }, { 0, -1 }, { 1, -1 } };
 
-    TracePoint tracer(TracePoint tp){
+    private TracePoint tracer(TracePoint tp){
         return tracer(tp.x,tp.y,(tp.traceDirection + 6) % 8);
     }
 
-    TracePoint tracer(int cx, int cy, int tracingdirection)
+    private TracePoint tracer(int cx, int cy, int tracingdirection)
     {
         int i, y, x;
         int width = bitMap.getWidth();

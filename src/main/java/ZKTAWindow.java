@@ -6,6 +6,7 @@ import javax.imageio.ImageIO;
 import javax.swing.JFrame;
 import javax.swing.ImageIcon;
 import javax.swing.JLabel;
+import javax.swing.plaf.synth.Region;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -82,9 +83,9 @@ public class ZKTAWindow {
             }
         }
 
-        public static void main(String args[]) {
+        public static void main(String[] args) {
 
-            BufferedImage img = null;
+            BufferedImage img;
             try {
                 img = ImageIO.read(new File("trojan.png"));
             } catch (IOException e) {
@@ -141,15 +142,24 @@ public class ZKTAWindow {
                     int[] v2 = zkta.coordsFromVoronoi(e.target);
 
                     if(zkta.pruned.contains(e)){
-                        bg.setColor(Color.LIGHT_GRAY);
+                        bg.setColor(Color.DARK_GRAY);
                     }else{
-                        bg.setColor(Color.CYAN);
-                        bg.fillOval(v1[0] - 3, v1[1] - 3, 6, 6);
-                        bg.fillOval(v2[0] - 3, v2[1] - 3, 6, 6);
+                        bg.setColor(Color.LIGHT_GRAY);
+                        //bg.fillOval(v1[0] - 3, v1[1] - 3, 6, 6);
+                        //bg.fillOval(v2[0] - 3, v2[1] - 3, 6, 6);
                     }
                     edges++;
                     bg.drawLine(v1[0],v1[1],v2[0],v2[1]);
                 }
+            }
+            bg.setColor(Color.ORANGE);
+            RegionGraph r = zkta.getRegions();
+            for(Node n:r.regionNodes){
+                bg.drawOval(n.position.x - 4, n.position.y - 4, 8, 8);
+            }
+
+            for(Node n:r.nodes){
+                bg.fillOval(n.position.x - 2, n.position.y - 2, 4, 4);
             }
 
             bg.setColor(Color.YELLOW);
@@ -189,6 +199,16 @@ public class ZKTAWindow {
             System.out.println("Total contour points: "+fullSizePoints);
             System.out.println("Simplified points: "+simplifiedPoints);
             System.out.println("Voronoi edges: "+edges);
+
+
+
+            File outputfile = new File("result.png");
+            try {
+                ImageIO.write(img, "png", outputfile);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
 
             JFrame frame = new JFrame();
             ImageIcon icon = new ImageIcon(img);

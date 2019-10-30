@@ -1,2 +1,4 @@
 *.DS_Store
+.idea/*
 /zkta.iml
+result.png

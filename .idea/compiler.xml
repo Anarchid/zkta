@@ -9,8 +9,5 @@
         <module name="zkta" />
       </profile>
     </annotationProcessing>
-    <bytecodeTargetLevel>
-      <module name="zkta" target="8" />
-    </bytecodeTargetLevel>
   </component>
 </project>
